@@ -1,5 +1,5 @@
 {
-  "name": "meshtastic-node-siting",
+  "name": "mesh-site-finder",
   "private": true,
   "version": "0.0.1",
   "type": "module",
