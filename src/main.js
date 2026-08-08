@@ -13,10 +13,31 @@ function $(id) {
   return document.getElementById(id);
 }
 
-function setStatus(msg, cls) {
-  var el = $("status");
-  el.className = "small " + (cls || "");
-  el.textContent = msg;
+function setStatus(msg, cls, loading) {
+  var statusEl = $("status");
+  var textEl = $("statusText");
+  var spinnerEl = $("statusSpinner");
+
+  statusEl.className = "small " + (cls || "");
+  textEl.textContent = msg || "";
+
+  if (loading) {
+    spinnerEl.hidden = false;
+    statusEl.setAttribute("aria-busy", "true");
+  } else {
+    spinnerEl.hidden = true;
+    statusEl.setAttribute("aria-busy", "false");
+  }
+}
+
+function setSearchBusy(busy) {
+  var button = $("go");
+
+  button.disabled = busy;
+  button.setAttribute(
+    "aria-disabled",
+    busy ? "true" : "false"
+  );
 }
 
 function haversineMeters(a, b) {
@@ -160,8 +181,6 @@ function titleFor(tags) {
     return String(tags.name).trim();
   }
 
-  // Towers and masts should never appear
-  // as raw OSM tag values.
   if (tags.man_made === "tower") {
     if (tags["tower:type"]) {
       return (
@@ -190,8 +209,6 @@ function titleFor(tags) {
     return "Unnamed mast";
   }
 
-  // building=yes means OSM knows it is
-  // a building but has no more specific type.
   if (tags.building) {
     if (tags.building === "yes") {
       return "Unnamed building";
@@ -317,9 +334,10 @@ function criticalLabel(tags) {
   if (
     tags.power === "substation"
   ) {
-    var op = tags.operator
-      ? " - " + tags.operator
-      : "";
+    var op =
+      tags.operator
+        ? " - " + tags.operator
+        : "";
 
     return (
       "Substation (power=substation)" +
@@ -356,7 +374,6 @@ function criticalLabel(tags) {
 }
 
 function elementToPoint(el) {
-  // Nodes have lat/lon.
   if (el.type === "node") {
     return {
       lat: el.lat,
@@ -364,8 +381,6 @@ function elementToPoint(el) {
     };
   }
 
-  // Ways/relations in "out center"
-  // provide center.lat/center.lon.
   if (el.center) {
     return {
       lat: el.center.lat,
@@ -444,7 +459,6 @@ function fixLeafletSizeSoon() {
   }, 800);
 }
 
-// Trigger once at startup.
 fixLeafletSizeSoon();
 
 window.addEventListener(
@@ -496,9 +510,7 @@ async function zipToLatLon(zip) {
   };
 }
 
-function overpassFriendlyMessage(
-  status
-) {
+function overpassFriendlyMessage(status) {
   if (status === 429) {
     return (
       "The map search service is receiving too many requests right now. " +
@@ -566,8 +578,7 @@ function makeOverpassError(
 
   err.isOverpassError = true;
   err.httpStatus = status;
-  err.userMessage =
-    userMessage;
+  err.userMessage = userMessage;
 
   return err;
 }
@@ -597,9 +608,7 @@ async function overpass(query) {
     err.userMessage =
       "Unable to reach the map search service. " +
       "Please check your connection and try again.";
-
-    err.cause =
-      networkError;
+    err.cause = networkError;
 
     throw err;
   }
@@ -625,9 +634,7 @@ async function overpass(query) {
     err.userMessage =
       "The map search service returned an unexpected response. " +
       "Please try again.";
-
-    err.cause =
-      parseError;
+    err.cause = parseError;
 
     throw err;
   }
@@ -827,7 +834,6 @@ function scoreCandidate(
    Export helpers
 ===================== */
 var lastRun = null;
-// { zip, center, radiusKm, candidates, critical }
 
 function csvEscape(v) {
   var s =
@@ -928,7 +934,6 @@ function buildCandidatesCsv(run) {
 function buildGeoJson(run) {
   var features = [];
 
-  // Center point.
   features.push({
     type: "Feature",
     geometry: {
@@ -949,7 +954,6 @@ function buildGeoJson(run) {
     }
   });
 
-  // Critical points.
   for (
     var i = 0;
     i < run.critical.length;
@@ -976,7 +980,6 @@ function buildGeoJson(run) {
     });
   }
 
-  // Candidate points.
   for (
     var j = 0;
     j < run.candidates.length;
@@ -1129,8 +1132,10 @@ function ensureExportUi() {
         if (!lastRun) {
           setStatus(
             "Run a search first to export.",
-            "err"
+            "err",
+            false
           );
+
           return;
         }
 
@@ -1170,8 +1175,10 @@ function ensureExportUi() {
         if (!lastRun) {
           setStatus(
             "Run a search first to export.",
-            "err"
+            "err",
+            false
           );
+
           return;
         }
 
@@ -1280,7 +1287,6 @@ function renderResults(
     var cand =
       candidates[j];
 
-    // Results are already sorted highest score first.
     var rank =
       j + 1;
 
@@ -1311,9 +1317,6 @@ function renderResults(
         cand.kind
       );
 
-    /* ---------------------
-       Result card
-    --------------------- */
     var card =
       document.createElement(
         "div"
@@ -1495,7 +1498,7 @@ function renderResults(
       nearestDiv
     );
 
-    // Explicit OpenStreetMap link.
+    // OpenStreetMap link.
     var osmDiv =
       document.createElement(
         "div"
@@ -1524,8 +1527,6 @@ function renderResults(
     osmLink.textContent =
       "View in OpenStreetMap";
 
-    // Prevent clicking the OSM link
-    // from triggering the card zoom.
     osmLink.addEventListener(
       "click",
       function (e) {
@@ -1541,8 +1542,7 @@ function renderResults(
       osmDiv
     );
 
-    // Clicking a result card zooms to
-    // its matching numbered map marker.
+    // Clicking the result zooms to its marker.
     card.addEventListener(
       "click",
       (
@@ -1573,9 +1573,7 @@ function renderResults(
       card
     );
 
-    /* ---------------------
-       Numbered map marker
-    --------------------- */
+    // Matching numbered map marker.
     var popupHtml =
       "<b>#" +
       rank +
@@ -1704,7 +1702,8 @@ async function run() {
   ) {
     setStatus(
       "Enter a valid 5-digit ZIP.",
-      "err"
+      "err",
+      false
     );
 
     return;
@@ -1718,7 +1717,8 @@ async function run() {
   ) {
     setStatus(
       "Radius must be a positive number.",
-      "err"
+      "err",
+      false
     );
 
     return;
@@ -1732,18 +1732,22 @@ async function run() {
   ) {
     setStatus(
       "Max candidates must be a positive integer.",
-      "err"
+      "err",
+      false
     );
 
     return;
   }
 
   ensureExportUi();
-
   clearMap();
 
+  setSearchBusy(true);
+
   setStatus(
-    "Looking up ZIP..."
+    "Looking up ZIP...",
+    "",
+    true
   );
 
   try {
@@ -1753,9 +1757,11 @@ async function run() {
       );
 
     setStatus(
-      "Querying OpenStreetMap around " +
+      "Searching OpenStreetMap around " +
         center.label +
-        "..."
+        "...",
+      "",
+      true
     );
 
     var r =
@@ -1898,7 +1904,6 @@ async function run() {
       }
     }
 
-    // Score candidates.
     var scored =
       candidatesRaw.map(
         function (c) {
@@ -1924,7 +1929,7 @@ async function run() {
         }
       );
 
-    // Highest-scoring candidate becomes #1.
+    // Highest score becomes result #1.
     scored.sort(
       function (
         a,
@@ -1969,7 +1974,9 @@ async function run() {
         " critical infrastructure sites. " +
         "Showing top " +
         top.length +
-        "."
+        ".",
+      "",
+      false
     );
 
     renderResults(
@@ -1989,7 +1996,8 @@ async function run() {
     ) {
       setStatus(
         e.userMessage,
-        "err"
+        "err",
+        false
       );
 
       return;
@@ -1998,7 +2006,26 @@ async function run() {
     setStatus(
       "Error: " +
         e.message,
-      "err"
+      "err",
+      false
+    );
+  } finally {
+    // Always restore the button and ensure
+    // that no loading state survives the request.
+    setSearchBusy(false);
+
+    var statusEl =
+      $("status");
+
+    var spinnerEl =
+      $("statusSpinner");
+
+    spinnerEl.hidden =
+      true;
+
+    statusEl.setAttribute(
+      "aria-busy",
+      "false"
     );
   }
 }
@@ -2017,8 +2044,7 @@ $("zip").addEventListener(
   "keydown",
   function (e) {
     if (
-      e.key ===
-      "Enter"
+      e.key === "Enter"
     ) {
       run();
     }
