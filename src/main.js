@@ -413,7 +413,7 @@ function ensureExportUi() {
       return;
     }
     var safeZip = String(lastRun.zip || "zip");
-    var filename = "meshtastic_candidates_" + safeZip + ".csv";
+    var filename = "mesh_site_candidates_" + safeZip + ".csv";
     var csv = buildCandidatesCsv(lastRun);
     downloadText(filename, "text/csv;charset=utf-8", csv);
   });
@@ -425,7 +425,7 @@ function ensureExportUi() {
       return;
     }
     var safeZip = String(lastRun.zip || "zip");
-    var filename = "meshtastic_sites_" + safeZip + ".geojson";
+    var filename = "mesh_sites_" + safeZip + ".geojson";
     var geo = buildGeoJson(lastRun);
     downloadText(filename, "application/geo+json;charset=utf-8", JSON.stringify(geo, null, 2));
   });
