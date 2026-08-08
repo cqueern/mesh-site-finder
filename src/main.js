@@ -492,7 +492,7 @@ function renderResults(center, candidates, critical) {
       '</span> <span class="pill">Height ' + heightTxt + '</span></div>' +
       '<div style="margin-top:6px;"></div>' +
       '<div class="small">' +
-      "Nearest critical: <b>" + nearestNameTxt + "</b> " +
+      "Nearest critical infrastructure: <b>" + nearestNameTxt + "</b> " +
       '<span class="mono">(' + nearestDistTxt + ")</span>" +
       " - within 1km: <b>" + cand.score.within1k + "</b>" +
       " - within 3km: <b>" + cand.score.within3k + "</b>" +
@@ -514,7 +514,7 @@ function renderResults(center, candidates, critical) {
       "<b>" + cand.title + "</b><br>" +
       "Kind: " + cand.kind + "<br>" +
       "Height: " + heightTxt + "<br>" +
-      "Nearest critical: " + nearestNameTxt + " (" + nearestDistTxt + ")<br>" +
+      "Nearest critical infrastructure: " + nearestNameTxt + " (" + nearestDistTxt + ")<br>" +
       "Score: " + cand.score.total.toFixed(1) + "<br>" +
       '<a href="' + cand.osm + '" target="_blank" rel="noreferrer">Open in OSM</a>';
 
