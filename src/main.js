@@ -45,7 +45,9 @@ function approxHeightMeters(tags) {
 
   // building:levels -> approx 3m per level
   if (tags["building:levels"]) {
-    var levels = parseFloat(String(tags["building:levels"]).replace(/[^\d.]/g, ""));
+    var levels = parseFloat(
+      String(tags["building:levels"]).replace(/[^\d.]/g, "")
+    );
     if (!Number.isNaN(levels) && levels > 0) return levels * 3.0;
   }
 
@@ -55,8 +57,123 @@ function approxHeightMeters(tags) {
   return null;
 }
 
+function humanizeTagValue(value) {
+  if (!value) return "";
+
+  var text = String(value)
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .trim();
+
+  if (!text) return "";
+
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function buildingTypeLabel(buildingValue) {
+  if (!buildingValue || buildingValue === "yes") {
+    return "Building";
+  }
+
+  var map = {
+    apartments: "Apartment building",
+    apartment: "Apartment building",
+    commercial: "Commercial building",
+    office: "Office building",
+    retail: "Retail building",
+    school: "School building",
+    university: "University building",
+    college: "College building",
+    hospital: "Hospital building",
+    civic: "Civic building",
+    public: "Public building",
+    government: "Government building",
+    government_office: "Government building",
+    industrial: "Industrial building",
+    warehouse: "Warehouse",
+    hotel: "Hotel",
+    church: "Church",
+    cathedral: "Cathedral",
+    chapel: "Chapel",
+    mosque: "Mosque",
+    synagogue: "Synagogue",
+    temple: "Temple",
+    residential: "Residential building",
+    house: "House",
+    detached: "Detached building",
+    terrace: "Terraced building",
+    dormitory: "Dormitory",
+    train_station: "Train station",
+    transportation: "Transportation building",
+    sports_centre: "Sports center",
+    stadium: "Stadium",
+    parking: "Parking structure",
+    garage: "Garage",
+    garages: "Garages"
+  };
+
+  if (map[buildingValue]) {
+    return map[buildingValue];
+  }
+
+  return humanizeTagValue(buildingValue) + " building";
+}
+
 function titleFor(tags) {
-  return tags.name || tags["tower:type"] || tags.man_made || tags.building || "Unnamed structure";
+  // Prefer an actual OSM name whenever one exists.
+  if (tags.name && String(tags.name).trim().length > 0) {
+    return String(tags.name).trim();
+  }
+
+  // Towers and masts should never appear as raw OSM tag values.
+  if (tags.man_made === "tower") {
+    if (tags["tower:type"]) {
+      return "Unnamed " + humanizeTagValue(tags["tower:type"]).toLowerCase() + " tower";
+    }
+    return "Unnamed tower";
+  }
+
+  if (tags.man_made === "mast") {
+    if (tags["tower:type"]) {
+      return "Unnamed " + humanizeTagValue(tags["tower:type"]).toLowerCase() + " mast";
+    }
+    return "Unnamed mast";
+  }
+
+  // building=yes simply means OSM knows it is a building but does not
+  // contain a more specific building classification.
+  if (tags.building) {
+    if (tags.building === "yes") {
+      return "Unnamed building";
+    }
+
+    return buildingTypeLabel(tags.building);
+  }
+
+  return "Unnamed structure";
+}
+
+function candidateTypeLabel(kind) {
+  if (!kind) return "Structure";
+
+  if (kind === "man_made=tower") {
+    return "Tower";
+  }
+
+  if (kind === "man_made=mast") {
+    return "Mast";
+  }
+
+  if (kind.indexOf("building=") === 0) {
+    var buildingValue = kind.substring("building=".length);
+    return buildingTypeLabel(buildingValue);
+  }
+
+  if (kind.indexOf("man_made=") === 0) {
+    return humanizeTagValue(kind.substring("man_made=".length));
+  }
+
+  return "Structure";
 }
 
 function osmUrl(type, id) {
@@ -64,7 +181,7 @@ function osmUrl(type, id) {
 }
 
 /* =====================
-   Critical infra label (Option C)
+   Critical infra label
 ===================== */
 function criticalLabel(tags) {
   if (tags.name && String(tags.name).trim().length > 0) {
@@ -77,6 +194,7 @@ function criticalLabel(tags) {
       fire_station: "Fire station",
       police: "Police station"
     };
+
     var human = map[tags.amenity] || "Amenity";
     return human + " (amenity=" + tags.amenity + ")";
   }
@@ -98,8 +216,20 @@ function criticalLabel(tags) {
 
 function elementToPoint(el) {
   // nodes have lat/lon; ways/relations in "out center" give center.lat/center.lon
-  if (el.type === "node") return { lat: el.lat, lon: el.lon };
-  if (el.center) return { lat: el.center.lat, lon: el.center.lon };
+  if (el.type === "node") {
+    return {
+      lat: el.lat,
+      lon: el.lon
+    };
+  }
+
+  if (el.center) {
+    return {
+      lat: el.center.lat,
+      lon: el.center.lon
+    };
+  }
+
   return null;
 }
 
@@ -135,22 +265,34 @@ var layerCandidates = L.layerGroup().addTo(map);
 var layerCritical = L.layerGroup().addTo(map);
 var layerCenter = L.layerGroup().addTo(map);
 
-// Fix default marker icon paths in some bundlers (simple workaround)
+// Fix default marker icon paths in some bundlers
 delete L.Icon.Default.prototype._getIconUrl;
+
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
+  iconRetinaUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
 });
 
 /* =====================
-   Leaflet sizing fix (GitHub Pages tile partial load)
+   Leaflet sizing fix
 ===================== */
 function fixLeafletSizeSoon() {
   // Run a few times to survive slow CSS/layout settle on GitHub Pages
-  setTimeout(function () { map.invalidateSize(true); }, 50);
-  setTimeout(function () { map.invalidateSize(true); }, 250);
-  setTimeout(function () { map.invalidateSize(true); }, 800);
+  setTimeout(function () {
+    map.invalidateSize(true);
+  }, 50);
+
+  setTimeout(function () {
+    map.invalidateSize(true);
+  }, 250);
+
+  setTimeout(function () {
+    map.invalidateSize(true);
+  }, 800);
 }
 
 // Trigger once at startup
@@ -166,11 +308,17 @@ window.addEventListener("resize", function () {
 ===================== */
 async function zipToLatLon(zip) {
   var res = await fetch("https://api.zippopotam.us/us/" + zip);
-  if (!res.ok) throw new Error("ZIP not found");
+
+  if (!res.ok) {
+    throw new Error("ZIP not found");
+  }
 
   var data = await res.json();
   var p = data.places && data.places[0];
-  if (!p) throw new Error("ZIP lookup returned no places");
+
+  if (!p) {
+    throw new Error("ZIP lookup returned no places");
+  }
 
   return {
     lat: parseFloat(p.latitude),
@@ -209,9 +357,11 @@ function overpassFriendlyMessage(status) {
 
 function makeOverpassError(status, userMessage) {
   var err = new Error("Overpass HTTP error: " + status);
+
   err.isOverpassError = true;
   err.httpStatus = status;
   err.userMessage = userMessage;
+
   return err;
 }
 
@@ -222,15 +372,19 @@ async function overpass(query) {
   try {
     res = await fetch("https://overpass-api.de/api/interpreter", {
       method: "POST",
-      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      headers: {
+        "Content-Type": "text/plain;charset=UTF-8"
+      },
       body: query
     });
   } catch (networkError) {
     var err = new Error("Unable to reach Overpass");
+
     err.isOverpassError = true;
     err.userMessage =
       "Unable to reach the map search service. Please check your connection and try again.";
     err.cause = networkError;
+
     throw err;
   }
 
@@ -245,10 +399,12 @@ async function overpass(query) {
     return await res.json();
   } catch (parseError) {
     var err = new Error("Invalid response from Overpass");
+
     err.isOverpassError = true;
     err.userMessage =
       "The map search service returned an unexpected response. Please try again.";
     err.cause = parseError;
+
     throw err;
   }
 }
@@ -259,26 +415,92 @@ function buildOverpassQuery(lat, lon, r) {
     "[out:json][timeout:25];\n" +
     "(\n" +
     "  // Tall candidates\n" +
-    "  way(around:" + r + "," + lat + "," + lon + ")[\"building\"][\"building:levels\"];\n" +
-    "  way(around:" + r + "," + lat + "," + lon + ")[\"building\"][\"height\"];\n" +
-    "  node(around:" + r + "," + lat + "," + lon + ")[\"man_made\"~\"tower|mast\"];\n" +
-    "  way(around:" + r + "," + lat + "," + lon + ")[\"man_made\"~\"tower|mast\"];\n" +
-    "  relation(around:" + r + "," + lat + "," + lon + ")[\"man_made\"~\"tower|mast\"];\n" +
+    "  way(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"building\"][\"building:levels\"];\n" +
+    "  way(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"building\"][\"height\"];\n" +
+    "  node(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"man_made\"~\"tower|mast\"];\n" +
+    "  way(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"man_made\"~\"tower|mast\"];\n" +
+    "  relation(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"man_made\"~\"tower|mast\"];\n" +
     "\n" +
     "  // Critical infrastructure\n" +
-    "  node(around:" + r + "," + lat + "," + lon + ")[\"amenity\"~\"hospital|fire_station|police\"];\n" +
-    "  way(around:" + r + "," + lat + "," + lon + ")[\"amenity\"~\"hospital|fire_station|police\"];\n" +
-    "  node(around:" + r + "," + lat + "," + lon + ")[\"power\"=\"substation\"];\n" +
-    "  way(around:" + r + "," + lat + "," + lon + ")[\"power\"=\"substation\"];\n" +
-    "  node(around:" + r + "," + lat + "," + lon + ")[\"man_made\"=\"water_tower\"];\n" +
-    "  way(around:" + r + "," + lat + "," + lon + ")[\"man_made\"=\"water_tower\"];\n" +
+    "  node(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"amenity\"~\"hospital|fire_station|police\"];\n" +
+    "  way(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"amenity\"~\"hospital|fire_station|police\"];\n" +
+    "  node(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"power\"=\"substation\"];\n" +
+    "  way(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"power\"=\"substation\"];\n" +
+    "  node(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"man_made\"=\"water_tower\"];\n" +
+    "  way(around:" +
+    r +
+    "," +
+    lat +
+    "," +
+    lon +
+    ")[\"man_made\"=\"water_tower\"];\n" +
     ");\n" +
     "out tags center;\n"
   );
 }
 
 /* =====================
-   Scoring (includes nearest critical name)
+   Scoring
 ===================== */
 function scoreCandidate(candidate, criticalPoints) {
   var h = candidate.heightMeters;
@@ -300,14 +522,27 @@ function scoreCandidate(candidate, criticalPoints) {
       nearestKind = c.kind || "critical";
     }
 
-    if (d <= 1000) within1k++;
-    if (d <= 3000) within3k++;
+    if (d <= 1000) {
+      within1k++;
+    }
+
+    if (d <= 3000) {
+      within3k++;
+    }
   }
 
   var heightScore = Math.log2(1 + h) * 12;
   var densityScore = within1k * 18 + within3k * 6;
-  var proximityScore = (nearest === Infinity) ? 0 : Math.max(0, 18 - (nearest / 200));
-  var total = heightScore + densityScore + proximityScore;
+
+  var proximityScore =
+    nearest === Infinity
+      ? 0
+      : Math.max(0, 18 - nearest / 200);
+
+  var total =
+    heightScore +
+    densityScore +
+    proximityScore;
 
   return {
     total: total,
@@ -320,16 +555,29 @@ function scoreCandidate(candidate, criticalPoints) {
 }
 
 /* =====================
-   Export helpers (CSV / GeoJSON)
+   Export helpers
 ===================== */
-var lastRun = null; // { zip, center, radiusKm, candidates, critical }
+var lastRun = null;
+// { zip, center, radiusKm, candidates, critical }
 
 function csvEscape(v) {
-  var s = (v === null || v === undefined) ? "" : String(v);
-  if (s.indexOf('"') !== -1) s = s.replace(/"/g, '""');
-  if (s.indexOf(",") !== -1 || s.indexOf("\n") !== -1 || s.indexOf("\r") !== -1) {
+  var s =
+    v === null || v === undefined
+      ? ""
+      : String(v);
+
+  if (s.indexOf('"') !== -1) {
+    s = s.replace(/"/g, '""');
+  }
+
+  if (
+    s.indexOf(",") !== -1 ||
+    s.indexOf("\n") !== -1 ||
+    s.indexOf("\r") !== -1
+  ) {
     s = '"' + s + '"';
   }
+
   return s;
 }
 
@@ -355,7 +603,12 @@ function buildCandidatesCsv(run) {
 
   for (var i = 0; i < run.candidates.length; i++) {
     var c = run.candidates[i];
-    var nearestKm = Number.isFinite(c.score.nearestMeters) ? (c.score.nearestMeters / 1000) : "";
+
+    var nearestKm =
+      Number.isFinite(c.score.nearestMeters)
+        ? c.score.nearestMeters / 1000
+        : "";
+
     var row = [
       "candidate",
       c.title,
@@ -371,6 +624,7 @@ function buildCandidatesCsv(run) {
       c.kind,
       c.osm
     ];
+
     lines.push(row.map(csvEscape).join(","));
   }
 
@@ -383,7 +637,13 @@ function buildGeoJson(run) {
   // Center point
   features.push({
     type: "Feature",
-    geometry: { type: "Point", coordinates: [run.center.lon, run.center.lat] },
+    geometry: {
+      type: "Point",
+      coordinates: [
+        run.center.lon,
+        run.center.lat
+      ]
+    },
     properties: {
       feature_type: "zip_center",
       zip: run.zip,
@@ -395,9 +655,16 @@ function buildGeoJson(run) {
   // Critical points
   for (var i = 0; i < run.critical.length; i++) {
     var k = run.critical[i];
+
     features.push({
       type: "Feature",
-      geometry: { type: "Point", coordinates: [k.lon, k.lat] },
+      geometry: {
+        type: "Point",
+        coordinates: [
+          k.lon,
+          k.lat
+        ]
+      },
       properties: {
         feature_type: "critical",
         title: k.title,
@@ -409,9 +676,16 @@ function buildGeoJson(run) {
   // Candidate points
   for (var j = 0; j < run.candidates.length; j++) {
     var c = run.candidates[j];
+
     features.push({
       type: "Feature",
-      geometry: { type: "Point", coordinates: [c.lon, c.lat] },
+      geometry: {
+        type: "Point",
+        coordinates: [
+          c.lon,
+          c.lat
+        ]
+      },
       properties: {
         feature_type: "candidate",
         title: c.title,
@@ -420,9 +694,12 @@ function buildGeoJson(run) {
         score_total: c.score.total,
         within_1km: c.score.within1k,
         within_3km: c.score.within3k,
-        nearest_critical_title: c.score.nearestTitle,
-        nearest_critical_kind: c.score.nearestKind,
-        nearest_critical_m: c.score.nearestMeters,
+        nearest_critical_title:
+          c.score.nearestTitle,
+        nearest_critical_kind:
+          c.score.nearestKind,
+        nearest_critical_m:
+          c.score.nearestMeters,
         osm_url: c.osm
       }
     });
@@ -434,29 +711,58 @@ function buildGeoJson(run) {
   };
 }
 
-function downloadText(filename, mimeType, text) {
-  var blob = new Blob([text], { type: mimeType });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
+function downloadText(
+  filename,
+  mimeType,
+  text
+) {
+  var blob = new Blob(
+    [text],
+    {
+      type: mimeType
+    }
+  );
+
+  var url =
+    URL.createObjectURL(blob);
+
+  var a =
+    document.createElement("a");
+
   a.href = url;
   a.download = filename;
+
   document.body.appendChild(a);
+
   a.click();
+
   document.body.removeChild(a);
 
   // Delay revoke to allow the download to start
-  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  setTimeout(function () {
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 function ensureExportUi() {
-  // Insert export UI just under the status line, if it doesn't already exist.
+  // Insert export UI just under the status line,
+  // if it doesn't already exist.
   var statusEl = $("status");
-  if (!statusEl) return;
 
-  var existing = document.getElementById("exportLinks");
-  if (existing) return;
+  if (!statusEl) {
+    return;
+  }
 
-  var wrap = document.createElement("div");
+  var existing =
+    document.getElementById("exportLinks");
+
+  if (existing) {
+    return;
+  }
+
+  var wrap =
+    document.createElement("div");
+
   wrap.id = "exportLinks";
   wrap.className = "small";
   wrap.style.marginTop = "6px";
@@ -468,41 +774,82 @@ function ensureExportUi() {
     '<a href="#" id="exportGeoJsonLink">GeoJSON</a>';
 
   // Place it right after the status element
-  statusEl.parentNode.insertBefore(wrap, statusEl.nextSibling);
+  statusEl.parentNode.insertBefore(
+    wrap,
+    statusEl.nextSibling
+  );
 
-  document.getElementById("exportCsvLink").addEventListener("click", function (e) {
-    e.preventDefault();
+  document
+    .getElementById("exportCsvLink")
+    .addEventListener(
+      "click",
+      function (e) {
+        e.preventDefault();
 
-    if (!lastRun) {
-      setStatus("Run a search first to export.", "err");
-      return;
-    }
+        if (!lastRun) {
+          setStatus(
+            "Run a search first to export.",
+            "err"
+          );
+          return;
+        }
 
-    var safeZip = String(lastRun.zip || "zip");
-    var filename = "mesh_site_candidates_" + safeZip + ".csv";
-    var csv = buildCandidatesCsv(lastRun);
+        var safeZip =
+          String(lastRun.zip || "zip");
 
-    downloadText(filename, "text/csv;charset=utf-8", csv);
-  });
+        var filename =
+          "mesh_site_candidates_" +
+          safeZip +
+          ".csv";
 
-  document.getElementById("exportGeoJsonLink").addEventListener("click", function (e) {
-    e.preventDefault();
+        var csv =
+          buildCandidatesCsv(lastRun);
 
-    if (!lastRun) {
-      setStatus("Run a search first to export.", "err");
-      return;
-    }
-
-    var safeZip = String(lastRun.zip || "zip");
-    var filename = "mesh_sites_" + safeZip + ".geojson";
-    var geo = buildGeoJson(lastRun);
-
-    downloadText(
-      filename,
-      "application/geo+json;charset=utf-8",
-      JSON.stringify(geo, null, 2)
+        downloadText(
+          filename,
+          "text/csv;charset=utf-8",
+          csv
+        );
+      }
     );
-  });
+
+  document
+    .getElementById("exportGeoJsonLink")
+    .addEventListener(
+      "click",
+      function (e) {
+        e.preventDefault();
+
+        if (!lastRun) {
+          setStatus(
+            "Run a search first to export.",
+            "err"
+          );
+          return;
+        }
+
+        var safeZip =
+          String(lastRun.zip || "zip");
+
+        var filename =
+          "mesh_sites_" +
+          safeZip +
+          ".geojson";
+
+        var geo =
+          buildGeoJson(lastRun);
+
+        downloadText(
+          filename,
+          "application/geo+json;charset=utf-8",
+          JSON.stringify(
+            geo,
+            null,
+            2
+          )
+        );
+      }
+    );
 }
 
 /* =====================
@@ -514,13 +861,23 @@ function clearMap() {
   layerCenter.clearLayers();
 }
 
-function renderResults(center, candidates, critical) {
+function renderResults(
+  center,
+  candidates,
+  critical
+) {
   var resultsEl = $("results");
+
   resultsEl.innerHTML = "";
 
   // Center marker
   layerCenter.addLayer(
-    L.circleMarker([center.lat, center.lon], { radius: 8 }).bindPopup(
+    L.circleMarker(
+      [center.lat, center.lon],
+      {
+        radius: 8
+      }
+    ).bindPopup(
       "<b>ZIP center</b><br>" +
         center.label +
         "<br>" +
@@ -530,97 +887,313 @@ function renderResults(center, candidates, critical) {
     )
   );
 
-  // Critical markers (blue circles)
-  for (var i = 0; i < critical.length; i++) {
+  // Critical infrastructure markers
+  for (
+    var i = 0;
+    i < critical.length;
+    i++
+  ) {
     var c = critical[i];
 
     layerCritical.addLayer(
-      L.circleMarker([c.lat, c.lon], { radius: 5 }).bindPopup(
-        "<b>Critical</b><br>" + c.title + "<br>" + c.kind
+      L.circleMarker(
+        [c.lat, c.lon],
+        {
+          radius: 5
+        }
+      ).bindPopup(
+        "<b>Critical infrastructure</b><br>" +
+          c.title +
+          "<br>" +
+          c.kind
       )
     );
   }
 
-  // Candidate markers + side list (cards)
-  for (var j = 0; j < candidates.length; j++) {
+  // Candidate markers + result cards
+  for (
+    var j = 0;
+    j < candidates.length;
+    j++
+  ) {
     var cand = candidates[j];
 
-    var card = document.createElement("div");
+    var heightTxt =
+      cand.heightMeters
+        ? cand.heightMeters.toFixed(1) +
+          " m"
+        : "unknown";
+
+    var nearestDistTxt =
+      Number.isFinite(
+        cand.score.nearestMeters
+      )
+        ? (
+            cand.score.nearestMeters /
+            1000
+          ).toFixed(2) + " km"
+        : "n/a";
+
+    var nearestNameTxt =
+      cand.score.nearestTitle
+        ? cand.score.nearestTitle
+        : "n/a";
+
+    var typeTxt =
+      candidateTypeLabel(cand.kind);
+
+    /* ---------------------
+       Result card
+    --------------------- */
+    var card =
+      document.createElement("div");
+
     card.className = "card";
 
-    var link = document.createElement("a");
-    link.href = cand.osm;
-    link.target = "_blank";
-    link.rel = "noreferrer";
-    link.textContent = cand.title;
+    // Score / height row
+    var metrics =
+      document.createElement("div");
 
-    var heightTxt = cand.heightMeters
-      ? (cand.heightMeters.toFixed(1) + " m")
-      : "unknown";
+    var scorePill =
+      document.createElement("span");
 
-    var nearestDistTxt = Number.isFinite(cand.score.nearestMeters)
-      ? ((cand.score.nearestMeters / 1000).toFixed(2) + " km")
-      : "n/a";
+    scorePill.className = "pill";
+    scorePill.textContent =
+      "Score " +
+      cand.score.total.toFixed(1);
 
-    var nearestNameTxt = cand.score.nearestTitle
-      ? cand.score.nearestTitle
-      : "n/a";
+    var heightPill =
+      document.createElement("span");
 
-    card.innerHTML =
-      '<div><span class="pill">Score ' + cand.score.total.toFixed(1) +
-      '</span> <span class="pill">Height ' + heightTxt + '</span></div>' +
-      '<div style="margin-top:6px;"></div>' +
-      '<div class="small">' +
-      "Nearest critical infrastructure: <b>" + nearestNameTxt + "</b> " +
-      '<span class="mono">(' + nearestDistTxt + ")</span>" +
-      " - within 1km: <b>" + cand.score.within1k + "</b>" +
-      " - within 3km: <b>" + cand.score.within3k + "</b>" +
-      "</div>" +
-      '<div class="small mono" style="margin-top:6px;">' + cand.kind + "</div>";
+    heightPill.className = "pill";
+    heightPill.textContent =
+      "Height " + heightTxt;
 
-    var secondDiv = card.querySelector("div:nth-child(2)");
-    if (secondDiv) secondDiv.appendChild(link);
+    metrics.appendChild(scorePill);
+    metrics.appendChild(heightPill);
 
-    card.addEventListener("click", (function (lat, lon) {
-      return function () {
-        map.setView([lat, lon], Math.max(map.getZoom(), 15));
-      };
-    })(cand.lat, cand.lon));
+    card.appendChild(metrics);
+
+    // Candidate/site title
+    var titleDiv =
+      document.createElement("div");
+
+    titleDiv.style.marginTop = "8px";
+
+    var titleStrong =
+      document.createElement("strong");
+
+    titleStrong.textContent =
+      cand.title;
+
+    titleDiv.appendChild(
+      titleStrong
+    );
+
+    card.appendChild(titleDiv);
+
+    // Human-readable structure type
+    var typeDiv =
+      document.createElement("div");
+
+    typeDiv.className = "small";
+    typeDiv.style.marginTop = "3px";
+
+    var typeLabel =
+      document.createElement("span");
+
+    typeLabel.textContent =
+      "Type: ";
+
+    var typeStrong =
+      document.createElement("strong");
+
+    typeStrong.textContent =
+      typeTxt;
+
+    typeDiv.appendChild(typeLabel);
+    typeDiv.appendChild(typeStrong);
+
+    card.appendChild(typeDiv);
+
+    // Nearest critical infrastructure
+    var nearestDiv =
+      document.createElement("div");
+
+    nearestDiv.className = "small";
+    nearestDiv.style.marginTop = "5px";
+
+    var nearestPrefix =
+      document.createTextNode(
+        "Nearest critical infrastructure: "
+      );
+
+    var nearestStrong =
+      document.createElement("strong");
+
+    nearestStrong.textContent =
+      nearestNameTxt;
+
+    var nearestSuffix =
+      document.createTextNode(
+        " (" +
+          nearestDistTxt +
+          ") - within 1km: " +
+          cand.score.within1k +
+          " - within 3km: " +
+          cand.score.within3k
+      );
+
+    nearestDiv.appendChild(
+      nearestPrefix
+    );
+
+    nearestDiv.appendChild(
+      nearestStrong
+    );
+
+    nearestDiv.appendChild(
+      nearestSuffix
+    );
+
+    card.appendChild(nearestDiv);
+
+    // Explicit OpenStreetMap link
+    var osmDiv =
+      document.createElement("div");
+
+    osmDiv.className = "small";
+    osmDiv.style.marginTop = "7px";
+
+    var osmLink =
+      document.createElement("a");
+
+    osmLink.href = cand.osm;
+    osmLink.target = "_blank";
+    osmLink.rel = "noreferrer";
+    osmLink.textContent =
+      "View in OpenStreetMap";
+
+    // Prevent clicking the link from also
+    // triggering the card's map-zoom action.
+    osmLink.addEventListener(
+      "click",
+      function (e) {
+        e.stopPropagation();
+      }
+    );
+
+    osmDiv.appendChild(osmLink);
+
+    card.appendChild(osmDiv);
+
+    // Clicking the card zooms to the candidate.
+    card.addEventListener(
+      "click",
+      (function (lat, lon) {
+        return function () {
+          map.setView(
+            [lat, lon],
+            Math.max(
+              map.getZoom(),
+              15
+            )
+          );
+        };
+      })(
+        cand.lat,
+        cand.lon
+      )
+    );
 
     resultsEl.appendChild(card);
 
+    /* ---------------------
+       Map marker popup
+    --------------------- */
     var popupHtml =
-      "<b>" + cand.title + "</b><br>" +
-      "Kind: " + cand.kind + "<br>" +
-      "Height: " + heightTxt + "<br>" +
+      "<b>" +
+      cand.title +
+      "</b><br>" +
+      "Type: " +
+      typeTxt +
+      "<br>" +
+      "Height: " +
+      heightTxt +
+      "<br>" +
       "Nearest critical infrastructure: " +
       nearestNameTxt +
-      " (" + nearestDistTxt + ")<br>" +
-      "Score: " + cand.score.total.toFixed(1) + "<br>" +
-      '<a href="' + cand.osm + '" target="_blank" rel="noreferrer">Open in OSM</a>';
+      " (" +
+      nearestDistTxt +
+      ")<br>" +
+      "Score: " +
+      cand.score.total.toFixed(1) +
+      "<br>" +
+      '<a href="' +
+      cand.osm +
+      '" target="_blank" rel="noreferrer">' +
+      "View in OpenStreetMap" +
+      "</a>";
 
     layerCandidates.addLayer(
-      L.marker([cand.lat, cand.lon]).bindPopup(popupHtml)
+      L.marker(
+        [
+          cand.lat,
+          cand.lon
+        ]
+      ).bindPopup(
+        popupHtml
+      )
     );
   }
 
-  // Fit bounds around candidates + center + critical
+  // Fit bounds around candidates,
+  // center and critical infrastructure
   var pts = [];
-  pts.push([center.lat, center.lon]);
 
-  for (var a = 0; a < candidates.length; a++) {
-    pts.push([candidates[a].lat, candidates[a].lon]);
+  pts.push(
+    [
+      center.lat,
+      center.lon
+    ]
+  );
+
+  for (
+    var a = 0;
+    a < candidates.length;
+    a++
+  ) {
+    pts.push(
+      [
+        candidates[a].lat,
+        candidates[a].lon
+      ]
+    );
   }
 
-  for (var b = 0; b < critical.length; b++) {
-    pts.push([critical[b].lat, critical[b].lon]);
+  for (
+    var b = 0;
+    b < critical.length;
+    b++
+  ) {
+    pts.push(
+      [
+        critical[b].lat,
+        critical[b].lon
+      ]
+    );
   }
 
   if (pts.length > 0) {
-    var bounds = L.latLngBounds(pts);
-    map.fitBounds(bounds.pad(0.15));
+    var bounds =
+      L.latLngBounds(pts);
 
-    // Fix partial-tile rendering after a fitBounds on Pages
+    map.fitBounds(
+      bounds.pad(0.15)
+    );
+
+    // Fix partial-tile rendering
+    // after a fitBounds on Pages
     fixLeafletSizeSoon();
   }
 }
@@ -629,61 +1202,130 @@ function renderResults(center, candidates, critical) {
    Main flow
 ===================== */
 async function run() {
-  var zip = $("zip").value.trim();
-  var radiusKm = parseFloat($("radiusKm").value);
-  var maxCandidates = parseInt($("maxCandidates").value, 10);
+  var zip =
+    $("zip").value.trim();
+
+  var radiusKm =
+    parseFloat(
+      $("radiusKm").value
+    );
+
+  var maxCandidates =
+    parseInt(
+      $("maxCandidates").value,
+      10
+    );
 
   if (!/^\d{5}$/.test(zip)) {
-    setStatus("Enter a valid 5-digit ZIP.", "err");
+    setStatus(
+      "Enter a valid 5-digit ZIP.",
+      "err"
+    );
     return;
   }
 
-  if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
-    setStatus("Radius must be a positive number.", "err");
+  if (
+    !Number.isFinite(radiusKm) ||
+    radiusKm <= 0
+  ) {
+    setStatus(
+      "Radius must be a positive number.",
+      "err"
+    );
     return;
   }
 
-  if (!Number.isFinite(maxCandidates) || maxCandidates <= 0) {
-    setStatus("Max candidates must be a positive integer.", "err");
+  if (
+    !Number.isFinite(maxCandidates) ||
+    maxCandidates <= 0
+  ) {
+    setStatus(
+      "Max candidates must be a positive integer.",
+      "err"
+    );
     return;
   }
 
-  ensureExportUi(); // show export links (will be usable after first run)
+  ensureExportUi();
 
   clearMap();
-  setStatus("Looking up ZIP...");
+
+  setStatus(
+    "Looking up ZIP..."
+  );
 
   try {
-    var center = await zipToLatLon(zip);
+    var center =
+      await zipToLatLon(zip);
 
-    setStatus("Querying OpenStreetMap around " + center.label + "...");
+    setStatus(
+      "Querying OpenStreetMap around " +
+        center.label +
+        "..."
+    );
 
-    var r = Math.round(radiusKm * 1000);
-    var query = buildOverpassQuery(center.lat, center.lon, r);
-    var data = await overpass(query);
+    var r =
+      Math.round(
+        radiusKm * 1000
+      );
 
-    var elements = data.elements || [];
+    var query =
+      buildOverpassQuery(
+        center.lat,
+        center.lon,
+        r
+      );
+
+    var data =
+      await overpass(query);
+
+    var elements =
+      data.elements || [];
 
     var critical = [];
     var candidatesRaw = [];
 
-    for (var i = 0; i < elements.length; i++) {
-      var el = elements[i];
-      var tags = el.tags || {};
-      var pt = elementToPoint(el);
+    for (
+      var i = 0;
+      i < elements.length;
+      i++
+    ) {
+      var el =
+        elements[i];
 
-      if (!pt) continue;
+      var tags =
+        el.tags || {};
 
-      if (isCritical(tags)) {
-        var ctitle = criticalLabel(tags);
+      var pt =
+        elementToPoint(el);
 
-        var ckind = tags.amenity
-          ? ("amenity=" + tags.amenity)
-          : tags.power
-          ? ("power=" + tags.power)
-          : tags.man_made
-          ? ("man_made=" + tags.man_made)
-          : "critical";
+      if (!pt) {
+        continue;
+      }
+
+      if (
+        isCritical(tags)
+      ) {
+        var ctitle =
+          criticalLabel(tags);
+
+        var ckind =
+          tags.amenity
+            ? (
+                "amenity=" +
+                tags.amenity
+              )
+            : tags.power
+            ? (
+                "power=" +
+                tags.power
+              )
+            : tags.man_made
+            ? (
+                "man_made=" +
+                tags.man_made
+              )
+            : "critical";
 
         critical.push({
           lat: pt.lat,
@@ -691,46 +1333,88 @@ async function run() {
           title: ctitle,
           kind: ckind
         });
-      } else if (isCandidate(tags)) {
-        var h = approxHeightMeters(tags);
+      } else if (
+        isCandidate(tags)
+      ) {
+        var h =
+          approxHeightMeters(
+            tags
+          );
 
-        if (h === null || h < MIN_HEIGHT_METERS) continue;
+        if (
+          h === null ||
+          h < MIN_HEIGHT_METERS
+        ) {
+          continue;
+        }
 
-        var k = tags.man_made
-          ? ("man_made=" + tags.man_made)
-          : tags.building
-          ? ("building=" + tags.building)
-          : "candidate";
+        var k =
+          tags.man_made
+            ? (
+                "man_made=" +
+                tags.man_made
+              )
+            : tags.building
+            ? (
+                "building=" +
+                tags.building
+              )
+            : "candidate";
 
         candidatesRaw.push({
           lat: pt.lat,
           lon: pt.lon,
-          title: titleFor(tags),
+          title:
+            titleFor(tags),
           kind: k,
           heightMeters: h,
-          osm: osmUrl(el.type, el.id)
+          osm:
+            osmUrl(
+              el.type,
+              el.id
+            )
         });
       }
     }
 
     // Score + sort
-    var scored = candidatesRaw.map(function (c) {
-      return {
-        lat: c.lat,
-        lon: c.lon,
-        title: c.title,
-        kind: c.kind,
-        heightMeters: c.heightMeters,
-        osm: c.osm,
-        score: scoreCandidate(c, critical)
-      };
-    });
+    var scored =
+      candidatesRaw.map(
+        function (c) {
+          return {
+            lat: c.lat,
+            lon: c.lon,
+            title: c.title,
+            kind: c.kind,
+            heightMeters:
+              c.heightMeters,
+            osm: c.osm,
+            score:
+              scoreCandidate(
+                c,
+                critical
+              )
+          };
+        }
+      );
 
-    scored.sort(function (a, b) {
-      return b.score.total - a.score.total;
-    });
+    scored.sort(
+      function (a, b) {
+        return (
+          b.score.total -
+          a.score.total
+        );
+      }
+    );
 
-    var top = scored.slice(0, Math.max(1, maxCandidates));
+    var top =
+      scored.slice(
+        0,
+        Math.max(
+          1,
+          maxCandidates
+        )
+      );
 
     // Save for export
     lastRun = {
@@ -742,25 +1426,48 @@ async function run() {
     };
 
     setStatus(
-      "Found " + candidatesRaw.length +
-      " candidates >= " + MIN_HEIGHT_METERS +
-      "m and " + critical.length +
-      " critical sites. Showing top " + top.length + "."
+      "Found " +
+        candidatesRaw.length +
+        " candidates >= " +
+        MIN_HEIGHT_METERS +
+        "m and " +
+        critical.length +
+        " critical infrastructure sites. Showing top " +
+        top.length +
+        "."
     );
 
-    renderResults(center, top, critical);
+    renderResults(
+      center,
+      top,
+      critical
+    );
   } catch (e) {
-    // Keep the technical details available to developers in the console.
+    // Keep technical details
+    // available in the console.
     console.error(e);
 
-    // Show friendly Overpass errors to normal users.
-    if (e && e.isOverpassError && e.userMessage) {
-      setStatus(e.userMessage, "err");
+    // Friendly Overpass errors
+    // for normal users.
+    if (
+      e &&
+      e.isOverpassError &&
+      e.userMessage
+    ) {
+      setStatus(
+        e.userMessage,
+        "err"
+      );
       return;
     }
 
-    // Preserve existing behavior for non-Overpass errors.
-    setStatus("Error: " + e.message, "err");
+    // Preserve existing behavior
+    // for non-Overpass errors.
+    setStatus(
+      "Error: " +
+        e.message,
+      "err"
+    );
   }
 }
 
@@ -769,8 +1476,18 @@ async function run() {
 ===================== */
 ensureExportUi();
 
-$("go").addEventListener("click", run);
+$("go").addEventListener(
+  "click",
+  run
+);
 
-$("zip").addEventListener("keydown", function (e) {
-  if (e.key === "Enter") run();
-});
+$("zip").addEventListener(
+  "keydown",
+  function (e) {
+    if (
+      e.key === "Enter"
+    ) {
+      run();
+    }
+  }
+);
