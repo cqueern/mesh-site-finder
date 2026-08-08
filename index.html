@@ -56,6 +56,11 @@
       cursor: pointer;
     }
 
+    button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
+
     main {
       display: grid;
       grid-template-columns: 420px 1fr;
@@ -98,14 +103,53 @@
       margin-right: 6px;
     }
 
-    .warn { color: #7a4; }
-    .err  { color: #b00; }
+    .warn {
+      color: #7a4;
+    }
+
+    .err {
+      color: #b00;
+    }
+
+    #status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 18px;
+    }
+
+    .spinner {
+      width: 13px;
+      height: 13px;
+      flex: 0 0 13px;
+      border: 2px solid #ccc;
+      border-top-color: #555;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    .spinner[hidden] {
+      display: none;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spinner {
+        animation-duration: 1.5s;
+      }
+    }
   </style>
 </head>
 
 <body>
   <header>
     <h1>Mesh Site Finder</h1>
+
     <div class="subtitle">
       Find and evaluate promising locations for elevated wireless mesh nodes.
     </div>
@@ -125,15 +169,25 @@
 
       <div>
         <label>Search radius (km)</label>
-        <input id="radiusKm" value="3" type="number"/>
+        <input
+          id="radiusKm"
+          value="3"
+          type="number"
+        />
       </div>
 
       <div>
         <label>Max candidates</label>
-        <input id="maxCandidates" value="25" type="number"/>
+        <input
+          id="maxCandidates"
+          value="25"
+          type="number"
+        />
       </div>
 
-      <button id="go">Find tall mounting candidates</button>
+      <button id="go">
+        Find tall mounting candidates
+      </button>
     </div>
 
     <div class="small" style="margin-top:8px;">
@@ -151,12 +205,30 @@
       Prototype: uses OpenStreetMap. Always get permission, follow RF rules, and mount safely.
     </div>
 
-    <div id="status" class="small" style="margin-top:6px;"></div>
+    <div
+      id="status"
+      class="small"
+      style="margin-top:6px;"
+      aria-live="polite"
+      aria-busy="false"
+    >
+      <span
+        id="statusSpinner"
+        class="spinner"
+        hidden
+        aria-hidden="true"
+      ></span>
+
+      <span id="statusText"></span>
+    </div>
   </header>
 
   <main>
     <section id="side">
-      <div class="small">Results will appear here…</div>
+      <div class="small">
+        Results will appear here…
+      </div>
+
       <div id="results"></div>
     </section>
 
