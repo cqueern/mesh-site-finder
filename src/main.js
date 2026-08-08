@@ -179,15 +179,78 @@ async function zipToLatLon(zip) {
   };
 }
 
+function overpassFriendlyMessage(status) {
+  if (status === 429) {
+    return "The map search service is receiving too many requests right now. Please wait a moment and try again.";
+  }
+
+  if (status === 408) {
+    return "The map search took too long to complete. Please try again or reduce the search radius.";
+  }
+
+  if (status === 502 || status === 503 || status === 504) {
+    return "The map search service is temporarily busy or unavailable. Please try again in a moment or reduce the search radius.";
+  }
+
+  if (status === 400) {
+    return "The map search service could not process this search. Please try again with a smaller search radius.";
+  }
+
+  if (status === 403) {
+    return "The map search service is temporarily refusing requests. Please wait a moment and try again.";
+  }
+
+  if (status >= 500 && status <= 599) {
+    return "The map search service is temporarily unavailable. Please try again in a moment.";
+  }
+
+  return "The map search service could not complete your request. Please try again.";
+}
+
+function makeOverpassError(status, userMessage) {
+  var err = new Error("Overpass HTTP error: " + status);
+  err.isOverpassError = true;
+  err.httpStatus = status;
+  err.userMessage = userMessage;
+  return err;
+}
+
 async function overpass(query) {
   // Overpass public endpoint
-  var res = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=UTF-8" },
-    body: query
-  });
-  if (!res.ok) throw new Error("Overpass error: " + res.status);
-  return res.json();
+  var res;
+
+  try {
+    res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: query
+    });
+  } catch (networkError) {
+    var err = new Error("Unable to reach Overpass");
+    err.isOverpassError = true;
+    err.userMessage =
+      "Unable to reach the map search service. Please check your connection and try again.";
+    err.cause = networkError;
+    throw err;
+  }
+
+  if (!res.ok) {
+    throw makeOverpassError(
+      res.status,
+      overpassFriendlyMessage(res.status)
+    );
+  }
+
+  try {
+    return await res.json();
+  } catch (parseError) {
+    var err = new Error("Invalid response from Overpass");
+    err.isOverpassError = true;
+    err.userMessage =
+      "The map search service returned an unexpected response. Please try again.";
+    err.cause = parseError;
+    throw err;
+  }
 }
 
 function buildOverpassQuery(lat, lon, r) {
@@ -380,6 +443,7 @@ function downloadText(filename, mimeType, text) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+
   // Delay revoke to allow the download to start
   setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
 }
@@ -408,26 +472,36 @@ function ensureExportUi() {
 
   document.getElementById("exportCsvLink").addEventListener("click", function (e) {
     e.preventDefault();
+
     if (!lastRun) {
       setStatus("Run a search first to export.", "err");
       return;
     }
+
     var safeZip = String(lastRun.zip || "zip");
     var filename = "mesh_site_candidates_" + safeZip + ".csv";
     var csv = buildCandidatesCsv(lastRun);
+
     downloadText(filename, "text/csv;charset=utf-8", csv);
   });
 
   document.getElementById("exportGeoJsonLink").addEventListener("click", function (e) {
     e.preventDefault();
+
     if (!lastRun) {
       setStatus("Run a search first to export.", "err");
       return;
     }
+
     var safeZip = String(lastRun.zip || "zip");
     var filename = "mesh_sites_" + safeZip + ".geojson";
     var geo = buildGeoJson(lastRun);
-    downloadText(filename, "application/geo+json;charset=utf-8", JSON.stringify(geo, null, 2));
+
+    downloadText(
+      filename,
+      "application/geo+json;charset=utf-8",
+      JSON.stringify(geo, null, 2)
+    );
   });
 }
 
@@ -459,6 +533,7 @@ function renderResults(center, candidates, critical) {
   // Critical markers (blue circles)
   for (var i = 0; i < critical.length; i++) {
     var c = critical[i];
+
     layerCritical.addLayer(
       L.circleMarker([c.lat, c.lon], { radius: 5 }).bindPopup(
         "<b>Critical</b><br>" + c.title + "<br>" + c.kind
@@ -479,13 +554,17 @@ function renderResults(center, candidates, critical) {
     link.rel = "noreferrer";
     link.textContent = cand.title;
 
-    var heightTxt = cand.heightMeters ? (cand.heightMeters.toFixed(1) + " m") : "unknown";
+    var heightTxt = cand.heightMeters
+      ? (cand.heightMeters.toFixed(1) + " m")
+      : "unknown";
 
     var nearestDistTxt = Number.isFinite(cand.score.nearestMeters)
       ? ((cand.score.nearestMeters / 1000).toFixed(2) + " km")
       : "n/a";
 
-    var nearestNameTxt = cand.score.nearestTitle ? cand.score.nearestTitle : "n/a";
+    var nearestNameTxt = cand.score.nearestTitle
+      ? cand.score.nearestTitle
+      : "n/a";
 
     card.innerHTML =
       '<div><span class="pill">Score ' + cand.score.total.toFixed(1) +
@@ -514,7 +593,9 @@ function renderResults(center, candidates, critical) {
       "<b>" + cand.title + "</b><br>" +
       "Kind: " + cand.kind + "<br>" +
       "Height: " + heightTxt + "<br>" +
-      "Nearest critical infrastructure: " + nearestNameTxt + " (" + nearestDistTxt + ")<br>" +
+      "Nearest critical infrastructure: " +
+      nearestNameTxt +
+      " (" + nearestDistTxt + ")<br>" +
       "Score: " + cand.score.total.toFixed(1) + "<br>" +
       '<a href="' + cand.osm + '" target="_blank" rel="noreferrer">Open in OSM</a>';
 
@@ -527,12 +608,18 @@ function renderResults(center, candidates, critical) {
   var pts = [];
   pts.push([center.lat, center.lon]);
 
-  for (var a = 0; a < candidates.length; a++) pts.push([candidates[a].lat, candidates[a].lon]);
-  for (var b = 0; b < critical.length; b++) pts.push([critical[b].lat, critical[b].lon]);
+  for (var a = 0; a < candidates.length; a++) {
+    pts.push([candidates[a].lat, candidates[a].lon]);
+  }
+
+  for (var b = 0; b < critical.length; b++) {
+    pts.push([critical[b].lat, critical[b].lon]);
+  }
 
   if (pts.length > 0) {
     var bounds = L.latLngBounds(pts);
     map.fitBounds(bounds.pad(0.15));
+
     // Fix partial-tile rendering after a fitBounds on Pages
     fixLeafletSizeSoon();
   }
@@ -550,10 +637,12 @@ async function run() {
     setStatus("Enter a valid 5-digit ZIP.", "err");
     return;
   }
+
   if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
     setStatus("Radius must be a positive number.", "err");
     return;
   }
+
   if (!Number.isFinite(maxCandidates) || maxCandidates <= 0) {
     setStatus("Max candidates must be a positive integer.", "err");
     return;
@@ -566,6 +655,7 @@ async function run() {
 
   try {
     var center = await zipToLatLon(zip);
+
     setStatus("Querying OpenStreetMap around " + center.label + "...");
 
     var r = Math.round(radiusKm * 1000);
@@ -581,10 +671,12 @@ async function run() {
       var el = elements[i];
       var tags = el.tags || {};
       var pt = elementToPoint(el);
+
       if (!pt) continue;
 
       if (isCritical(tags)) {
         var ctitle = criticalLabel(tags);
+
         var ckind = tags.amenity
           ? ("amenity=" + tags.amenity)
           : tags.power
@@ -601,6 +693,7 @@ async function run() {
         });
       } else if (isCandidate(tags)) {
         var h = approxHeightMeters(tags);
+
         if (h === null || h < MIN_HEIGHT_METERS) continue;
 
         var k = tags.man_made
@@ -633,7 +726,9 @@ async function run() {
       };
     });
 
-    scored.sort(function (a, b) { return b.score.total - a.score.total; });
+    scored.sort(function (a, b) {
+      return b.score.total - a.score.total;
+    });
 
     var top = scored.slice(0, Math.max(1, maxCandidates));
 
@@ -647,13 +742,24 @@ async function run() {
     };
 
     setStatus(
-      "Found " + candidatesRaw.length + " candidates >= " + MIN_HEIGHT_METERS +
-      "m and " + critical.length + " critical sites. Showing top " + top.length + "."
+      "Found " + candidatesRaw.length +
+      " candidates >= " + MIN_HEIGHT_METERS +
+      "m and " + critical.length +
+      " critical sites. Showing top " + top.length + "."
     );
 
     renderResults(center, top, critical);
   } catch (e) {
+    // Keep the technical details available to developers in the console.
     console.error(e);
+
+    // Show friendly Overpass errors to normal users.
+    if (e && e.isOverpassError && e.userMessage) {
+      setStatus(e.userMessage, "err");
+      return;
+    }
+
+    // Preserve existing behavior for non-Overpass errors.
     setStatus("Error: " + e.message, "err");
   }
 }
@@ -662,7 +768,9 @@ async function run() {
    Events
 ===================== */
 ensureExportUi();
+
 $("go").addEventListener("click", run);
+
 $("zip").addEventListener("keydown", function (e) {
   if (e.key === "Enter") run();
 });
