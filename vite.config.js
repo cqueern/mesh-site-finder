@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  // IMPORTANT: must match your repo name for GitHub Pages
-  base: "/meshtastic-site-finder/",
+  // Use relative asset paths so the application can be hosted
+  // under any GitHub Pages repository path.
+  base: "./",
 });
