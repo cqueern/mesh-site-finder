@@ -1220,6 +1220,39 @@ function clearMap() {
   layerCenter.clearLayers();
 }
 
+// Construct popups using DOM text nodes so external map labels cannot become HTML.
+function safeMapPopup(heading, lines, osmUrl) {
+  var root = document.createElement("div");
+  var title = document.createElement("b");
+  title.textContent = String(heading);
+  root.appendChild(title);
+
+  lines.forEach(function (line) {
+    root.appendChild(document.createElement("br"));
+    root.appendChild(document.createTextNode(String(line)));
+  });
+
+  if (osmUrl) {
+    // Link destinations are restricted even if upstream map data changes.
+    try {
+      var url = new URL(osmUrl);
+      if (url.protocol === "https:" && url.hostname === "www.openstreetmap.org") {
+        root.appendChild(document.createElement("br"));
+        var link = document.createElement("a");
+        link.href = url.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "View in OpenStreetMap";
+        root.appendChild(link);
+      }
+    } catch (error) {
+      // Invalid links are omitted rather than rendered.
+    }
+  }
+
+  return root;
+}
+
 function renderResults(
   center,
   candidates,
@@ -1242,12 +1275,10 @@ function renderResults(
         radius: 8
       }
     ).bindPopup(
-      "<b>ZIP center</b><br>" +
-        center.label +
-        "<br>" +
-        center.lat.toFixed(5) +
-        ", " +
-        center.lon.toFixed(5)
+      safeMapPopup("ZIP center", [
+        center.label,
+        center.lat.toFixed(5) + ", " + center.lon.toFixed(5)
+      ])
     )
   );
 
@@ -1270,10 +1301,7 @@ function renderResults(
           radius: 5
         }
       ).bindPopup(
-        "<b>Critical infrastructure</b><br>" +
-          c.title +
-          "<br>" +
-          c.kind
+        safeMapPopup("Critical infrastructure", [c.title, c.kind])
       )
     );
   }
@@ -1574,36 +1602,17 @@ function renderResults(
     );
 
     // Matching numbered map marker.
-    var popupHtml =
-      "<b>#" +
-      rank +
-      " " +
-      cand.title +
-      "</b><br>" +
-
-      "Type: " +
-      typeTxt +
-      "<br>" +
-
-      "Height: " +
-      heightTxt +
-      "<br>" +
-
-      "Nearest critical infrastructure: " +
-      nearestNameTxt +
-      " (" +
-      nearestDistTxt +
-      ")<br>" +
-
-      "Score: " +
-      cand.score.total.toFixed(1) +
-      "<br>" +
-
-      '<a href="' +
-      cand.osm +
-      '" target="_blank" rel="noreferrer">' +
-      "View in OpenStreetMap" +
-      "</a>";
+    var popupContent = safeMapPopup(
+      "#" + rank + " " + cand.title,
+      [
+        "Type: " + typeTxt,
+        "Height: " + heightTxt,
+        "Nearest critical infrastructure: " + nearestNameTxt +
+          " (" + nearestDistTxt + ")",
+        "Score: " + cand.score.total.toFixed(1)
+      ],
+      cand.osm
+    );
 
     layerCandidates.addLayer(
       L.marker(
@@ -1623,7 +1632,7 @@ function renderResults(
             cand.title
         }
       ).bindPopup(
-        popupHtml
+        popupContent
       )
     );
   }
